@@ -145,10 +145,10 @@ client.on('messageCreate', async message => {
 ${getEventEmoji(description)} **Опис події:** ${description}
 
 📅 \`${formatDate(date)}\`
-⏰ \`${startTime} - ${endTime}\`
+⏰ \`${startTime === endTime ? startTime : `${startTime} - ${endTime}`}\`
 👤 \`${message.author.username}\`
 🔍 \`ID: #${this.lastID}\`
-						`
+							`
 						)
 						.setFooter({
 							text: 'Valheim Project • Система планування',
@@ -201,9 +201,9 @@ ${getEventEmoji(description)} **Опис події:** ${description}
 						const [startTime, endTime] = row.time.split('-')
 						scheduleEmbed.addFields({
 							name: `${getEventEmoji(row.description)} ${row.description}`,
-							value: `> 📅 \`${formatDate(
-								row.date
-							)}\` • ⏰ \`${startTime} - ${endTime}\`\n> 👤 Організатор: \`${
+							value: `> 📅 \`${formatDate(row.date)}\` • ⏰ \`${
+								startTime === endTime ? startTime : `${startTime} - ${endTime}`
+							}\`\n> 👤 Організатор: \`${
 								message.author.username
 							}\` • 🔍 \`ID: #${row.id}\``,
 							inline: false,
@@ -273,7 +273,7 @@ ${getEventEmoji(description)} **Опис події:** ${description}
 				[scheduleIdToSend, message.guild.id],
 				async (err, row) => {
 					if (err || !row) {
-						message.reply('Под��ю не знайдено!')
+						message.reply('Подію не знайдено!')
 						return
 					}
 
