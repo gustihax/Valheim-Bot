@@ -11,7 +11,8 @@
 	"license": "ISC",
 	"dependencies": {
 		"discord.js": "^14.x",
-		"sqlite3": "^5.x",
-		"dotenv": "^16.x"
+		"dotenv": "^16.x",
+		"express": "^4.21.2",
+		"sqlite3": "^5.x"
 	}
 }

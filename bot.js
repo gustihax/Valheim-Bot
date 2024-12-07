@@ -1,8 +1,16 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js')
 const sqlite3 = require('sqlite3').verbose()
 const dotenv = require('dotenv')
+const express = require('express')
 
 dotenv.config()
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+app.get('/', (req, res) => {
+	res.send('Бот працює!')
+})
 
 const client = new Client({
 	intents: [
@@ -76,7 +84,7 @@ client.on('messageCreate', async message => {
 				const errorEmbed = new EmbedBuilder()
 					.setTitle('❌ Помилка формату')
 					.setColor('#ff4757')
-					.setDescription('Неправильний формат дати або часу!')
+					.setDescription('Неправильни�� формат дати або часу!')
 					.addFields(
 						{ name: '📅 Правильний формат', value: 'DD.MM.YYYY HH:MM-HH:MM' },
 						{ name: '💡 Приклад', value: '07.12.2024 12:00-14:00' }
@@ -113,7 +121,7 @@ ${getEventEmoji(description)} **Опис події:** ${description}
 						`
 						)
 						.setFooter({
-							text: 'Valheim Project • Система планування',
+							text: 'Valheim Project • Си��тема планування',
 							iconURL: message.guild.iconURL(),
 						})
 						.setTimestamp()
@@ -313,5 +321,9 @@ function formatDate(date) {
 	}
 	return `${day} ${months[month]} ${year}`
 }
+
+app.listen(PORT, () => {
+	console.log(`Сервер запущено на порту ${PORT}`)
+})
 
 client.login(process.env.DISCORD_TOKEN)
