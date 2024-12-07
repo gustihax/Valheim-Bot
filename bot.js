@@ -41,6 +41,25 @@ const db = new sqlite3.Database('schedule.db', err => {
 
 client.once('ready', () => {
 	console.log(`Бот ${client.user.tag} готовий до роботи!`)
+	console.log(`Статус підключення: ${client.ws.status}`)
+	console.log(`Пінг: ${client.ws.ping}ms`)
+
+	client.user.setPresence({
+		activities: [{ name: 'Valheim', type: 'PLAYING' }],
+		status: 'online',
+	})
+})
+
+client.on('error', error => {
+	console.error('Помилка клієнта Discord:', error)
+})
+
+client.on('disconnect', () => {
+	console.log('Бот відключився від Discord!')
+})
+
+client.on('reconnecting', () => {
+	console.log('Бот намагається перепідключитися...')
 })
 
 client.on('messageCreate', async message => {
@@ -59,40 +78,51 @@ client.on('messageCreate', async message => {
 					.addFields(
 						{
 							name: '⌨️ Формат команди',
-							value: '```!add_schedule DD.MM.YYYY HH:MM-HH:MM Назва події```',
+							value: '```!add_schedule DD.MM.YYYY HH:MM[-HH:MM] Назва події```',
 						},
 						{
-							name: '💡 Приклад',
-							value: '```!add_schedule 07.12.2024 12:00-13:00 Рейд на Боса```',
+							name: '💡 Приклади',
+							value:
+								'```!add_schedule 07.12.2024 12:00-13:00 Рейд на Боса\n!add_schedule 07.12.2024 18:00 Збір ресурсів```',
 						}
 					)
-					.setFooter({
-						text: 'Valheim Project • Система планування',
-						iconURL: message.guild.iconURL(),
-					})
 				message.reply({ embeds: [helpEmbed] })
 				return
 			}
 
 			const date = args[0]
-			const timeRange = args[1]
+			const timeInput = args[1]
 			const description = args.slice(2).join(' ')
 			const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/
+			const singleTimeRegex = /^\d{2}:\d{2}$/
 			const timeRangeRegex = /^\d{2}:\d{2}-\d{2}:\d{2}$/
 
-			if (!dateRegex.test(date) || !timeRangeRegex.test(timeRange)) {
+			if (
+				!dateRegex.test(date) ||
+				(!singleTimeRegex.test(timeInput) && !timeRangeRegex.test(timeInput))
+			) {
 				const errorEmbed = new EmbedBuilder()
 					.setTitle('❌ Помилка формату')
 					.setColor('#ff4757')
-					.setDescription('Неправильни�� формат дати або часу!')
+					.setDescription('Неправильний формат дати або часу!')
 					.addFields(
-						{ name: '📅 Правильний формат', value: 'DD.MM.YYYY HH:MM-HH:MM' },
-						{ name: '💡 Приклад', value: '07.12.2024 12:00-14:00' }
+						{ name: '📅 Правильний формат дати', value: 'DD.MM.YYYY' },
+						{
+							name: '⏰ Правильний формат часу',
+							value: 'HH:MM або HH:MM-HH:MM',
+						},
+						{
+							name: '💡 Приклади',
+							value: '07.12.2024 18:00\n07.12.2024 12:00-14:00',
+						}
 					)
 				message.reply({ embeds: [errorEmbed] })
 				return
 			}
 
+			const timeRange = singleTimeRegex.test(timeInput)
+				? `${timeInput}-${timeInput}`
+				: timeInput
 			const [startTime, endTime] = timeRange.split('-')
 
 			db.run(
@@ -121,7 +151,7 @@ ${getEventEmoji(description)} **Опис події:** ${description}
 						`
 						)
 						.setFooter({
-							text: 'Valheim Project • Си��тема планування',
+							text: 'Valheim Project • Система планування',
 							iconURL: message.guild.iconURL(),
 						})
 						.setTimestamp()
@@ -243,7 +273,7 @@ ${getEventEmoji(description)} **Опис події:** ${description}
 				[scheduleIdToSend, message.guild.id],
 				async (err, row) => {
 					if (err || !row) {
-						message.reply('Подію не знайдено!')
+						message.reply('Под��ю не знайдено!')
 						return
 					}
 
@@ -297,7 +327,7 @@ function getEventEmoji(description) {
 	if (description.includes('база')) return '🏰'
 	if (description.includes('подорож')) return '🚶'
 	if (description.includes('експедиція')) return '��️'
-	if (description.includes('к��рабель')) return '⛵'
+	if (description.includes('корабель')) return '⛵'
 	if (description.includes('риболовля')) return '🎣'
 	if (description.includes('полювання')) return '🏹'
 	return '🎮'
@@ -327,3 +357,7 @@ app.listen(PORT, () => {
 })
 
 client.login(process.env.DISCORD_TOKEN)
+
+client.on('debug', info => {
+	console.log('Debug:', info)
+})
