@@ -27,13 +27,41 @@ async function saveSchedule(schedule) {
 function isValidDate(dateStr) {
 	const [day, month, year] = dateStr.split('.')
 	const date = new Date(year, month - 1, day)
-	return date instanceof Date && !isNaN(date) && date >= new Date()
+	const today = new Date()
+	today.setHours(0, 0, 0, 0)
+
+	return date instanceof Date && !isNaN(date) && date >= today
 }
 
 function isValidTime(timeStr) {
-	const timeRegex =
+	const singleTimeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/
+	const rangeTimeRegex =
 		/^([0-1][0-9]|2[0-3]):[0-5][0-9]-([0-1][0-9]|2[0-3]):[0-5][0-9]$/
-	return timeRegex.test(timeStr)
+
+	if (singleTimeRegex.test(timeStr)) {
+		return true
+	}
+
+	if (rangeTimeRegex.test(timeStr)) {
+		const [startTime, endTime] = timeStr.split('-')
+		const [startHour, startMinute] = startTime.split(':').map(Number)
+		const [endHour, endMinute] = endTime.split(':').map(Number)
+
+		const startMinutes = startHour * 60 + startMinute
+		const endMinutes = endHour * 60 + endMinute
+
+		return endMinutes > startMinutes
+	}
+
+	return false
+}
+
+function formatTimeDisplay(time) {
+	if (time.includes('-')) {
+		const [start, end] = time.split('-')
+		return `${start} — ${end}`
+	}
+	return time
 }
 
 async function handleAddSchedule(interaction, date, time, title) {
@@ -83,7 +111,7 @@ async function handleAddSchedule(interaction, date, time, title) {
 	await saveSchedule(schedule)
 
 	const [day, month, year] = date.split('.')
-	const [startTime, endTime] = time.split('-')
+	const timeDisplay = formatTimeDisplay(time)
 
 	const months = {
 		'01': 'Січня',
@@ -110,7 +138,7 @@ async function handleAddSchedule(interaction, date, time, title) {
 		.setDescription(
 			`💫 **Опис події:** ${title}\n\n` +
 				`📅 ${day} ${months[month]} ${year}\n` +
-				`⏰ ${startTime} — ${endTime}\n` +
+				`⏰ ${timeDisplay}\n` +
 				`👤 ${interaction.user.username}\n` +
 				`🔍 ID: #${newEvent.id}`
 		)
@@ -276,7 +304,7 @@ async function handleSendSchedule(interaction, user, id) {
 		)
 	} catch (error) {
 		await interaction.editReply(
-			'❌ Не вдалося надіслати повідомлення ��ористувачу. Можливо, у нього закриті приватні повідомлення.'
+			'❌ Не вдалося надіслати повідомлення користувачу. Можливо, у нього закриті приватні повідомлення.'
 		)
 	}
 }
