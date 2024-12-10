@@ -1,6 +1,7 @@
 require('dotenv').config()
 const { Client, GatewayIntentBits } = require('discord.js')
 const bot = require('./bot')
+const keepAlive = require('./keep_alive')
 
 const token =
 	process.env.DISCORD_TOKEN ||
@@ -97,6 +98,8 @@ client.on('interactionCreate', async interaction => {
 		}
 	}
 })
+
+keepAlive()
 
 client.login(token).catch(error => {
 	console.error('Failed to login:', error)
