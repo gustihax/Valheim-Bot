@@ -1,45 +1,61 @@
 require('dotenv').config()
-const { Client, GatewayIntentBits, REST, Routes } = require('discord.js')
+const { Client, GatewayIntentBits } = require('discord.js')
 const bot = require('./bot')
+
+const token =
+	process.env.DISCORD_TOKEN ||
+	(process.env.REPL_OWNER ? process.env.REPLIT_TOKEN : null)
+
+if (!token) {
+	console.error(
+		'❌ Discord token not found! Please set DISCORD_TOKEN in environment variables.'
+	)
+	process.exit(1)
+}
 
 const client = new Client({
 	intents: [
 		GatewayIntentBits.Guilds,
 		GatewayIntentBits.GuildMessages,
 		GatewayIntentBits.MessageContent,
+		GatewayIntentBits.GuildMessageReactions,
 	],
 })
 
-const commands = [
-	{
-		name: 'search',
-		description: 'Пошук товарів на OLX',
-		options: [
-			{
-				name: 'query',
-				description: 'Що шукаємо?',
-				type: 3,
-				required: true,
-			},
-		],
-	},
-	{
-		name: 'help',
-		description: 'Показати список команд',
-	},
-]
+client.on('error', error => {
+	console.error('Discord client error:', error)
+})
 
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN)
+process.on('unhandledRejection', error => {
+	console.error('Unhandled promise rejection:', error)
+})
 
 client.once('ready', async () => {
 	try {
-		await rest.put(Routes.applicationCommands(client.user.id), {
-			body: commands,
-		})
-		console.log('Slash commands registered')
-		console.log('PCBuilderBot is online!')
+		const commands = [
+			{
+				name: 'search',
+				description: 'Пошук товарів на OLX',
+				options: [
+					{
+						name: 'query',
+						description: 'Що шукаємо?',
+						type: 3,
+						required: true,
+					},
+				],
+			},
+			{
+				name: 'help',
+				description: 'Показати список команд',
+			},
+		]
+
+		await client.application.commands.set(commands)
+		console.log('✅ Slash commands registered')
+		console.log(`🤖 ${client.user.tag} is online!`)
 	} catch (error) {
-		console.error(error)
+		console.error('Error registering commands:', error)
 	}
 })
 
@@ -47,19 +63,42 @@ client.on('interactionCreate', async interaction => {
 	if (!interaction.isCommand()) return
 
 	try {
-		if (interaction.commandName === 'search') {
-			const query = interaction.options.getString('query')
-			await bot.handleSearch(interaction, query)
-		} else if (interaction.commandName === 'help') {
-			await bot.handleHelp(interaction)
+		switch (interaction.commandName) {
+			case 'search':
+				await bot.handleSearch(
+					interaction,
+					interaction.options.getString('query')
+				)
+				break
+			case 'help':
+				await bot.handleHelp(interaction)
+				break
+			default:
+				await interaction.reply({
+					content: 'Невідома команда',
+					ephemeral: true,
+				})
 		}
 	} catch (error) {
-		console.error(error)
-		await interaction.reply({
-			content: 'Виникла помилка при виконанні команди',
-			ephemeral: true,
-		})
+		console.error('Command execution error:', error)
+		try {
+			const reply = {
+				content: 'Виникла помилка при виконанні команди',
+				ephemeral: true,
+			}
+
+			if (interaction.deferred || interaction.replied) {
+				await interaction.editReply(reply)
+			} else {
+				await interaction.reply(reply)
+			}
+		} catch (e) {
+			console.error('Error sending error message:', e)
+		}
 	}
 })
 
-client.login(process.env.DISCORD_TOKEN)
+client.login(token).catch(error => {
+	console.error('Failed to login:', error)
+	process.exit(1)
+})
