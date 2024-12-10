@@ -8,20 +8,18 @@ const axios = require('axios')
 const cheerio = require('cheerio')
 
 async function handleSearch(interaction, query) {
-	await interaction.deferReply()
-	await searchOlx(interaction, query, 1)
-}
-
-async function handleHelp(interaction) {
-	const embed = new EmbedBuilder()
-		.setColor('#0099ff')
-		.setTitle('📋 Команди бота')
-		.setDescription(
-			'/search <запит> - Пошук товарів на OLX\n' +
-				'/help - Показати це повідомлення'
-		)
-
-	await interaction.reply({ embeds: [embed] })
+	try {
+		await interaction.deferReply()
+		await searchOlx(interaction, query, 1)
+	} catch (error) {
+		console.error('Search error:', error)
+		if (!interaction.replied && !interaction.deferred) {
+			await interaction.reply({
+				content: 'Виникла помилка при пошуку. Спробуйте пізніше.',
+				ephemeral: true,
+			})
+		}
+	}
 }
 
 async function searchOlx(interaction, query, page = 1) {
@@ -45,36 +43,29 @@ async function searchOlx(interaction, query, page = 1) {
 			const fullLink = link.startsWith('http')
 				? link
 				: `https://www.olx.ua${link}`
-			const imgUrl =
-				$(el).find('img').attr('src') ||
-				'https://static.olx.ua/static/olxua/naspersclassifieds-regional/olxeu-atlas-web-olxua/static/img/OLX_Social_Image.png'
+			const imgUrl = $(el).find('img').attr('src')
 
 			results.push({ title, price, link: fullLink, imgUrl })
 		})
 
 		if (!hasResults) {
-			await interaction.editReply('За вашим запитом нічого не знайдено.')
-			return
+			return await interaction.editReply('За вашим запитом нічого не знайдено.')
 		}
 
 		const embed = new EmbedBuilder()
 			.setColor('#00ff00')
 			.setTitle(`🔍 Результати пошуку: ${query}`)
-			.setURL(searchUrl)
 			.setFooter({ text: `Сторінка ${page}` })
-			.setTimestamp()
 
 		results.forEach((item, i) => {
 			embed.addFields({
-				name: `${i + 1}. ${item.title}`,
-				value: `💰 ${item.price}\n🔗 [Посилання](${item.link})`,
+				name: `${i + 1}. ${item.price}`,
+				value: `[${item.title}](${item.link})`,
 			})
-			if (i === 0) {
+			if (i === 0 && item.imgUrl) {
 				embed.setThumbnail(item.imgUrl)
 			}
 		})
-
-		const hasNextPage = $('a[data-testid="pagination-forward"]').length > 0
 
 		const row = new ActionRowBuilder().addComponents(
 			new ButtonBuilder()
@@ -86,20 +77,25 @@ async function searchOlx(interaction, query, page = 1) {
 				.setCustomId(`next_${query}_${page}`)
 				.setLabel('Вперед ▶️')
 				.setStyle(ButtonStyle.Primary)
-				.setDisabled(!hasNextPage)
 		)
 
 		const message = await interaction.editReply({
 			embeds: [embed],
-			components: hasNextPage || page > 1 ? [row] : [],
+			components: [row],
 		})
 
 		const collector = message.createMessageComponentCollector({
-			filter: i => i.user.id === interaction.user.id,
 			time: 60000,
 		})
 
 		collector.on('collect', async buttonInteraction => {
+			if (buttonInteraction.user.id !== interaction.user.id) {
+				return buttonInteraction.reply({
+					content: 'Ви не можете використовувати ці кнопки.',
+					ephemeral: true,
+				})
+			}
+
 			const [action, q, p] = buttonInteraction.customId.split('_')
 			const newPage = action === 'next' ? parseInt(p) + 1 : parseInt(p) - 1
 
@@ -107,22 +103,34 @@ async function searchOlx(interaction, query, page = 1) {
 			await searchOlx(interaction, q, newPage)
 		})
 
-		collector.on('end', async () => {
-			try {
-				await interaction.editReply({
-					embeds: [embed],
+		collector.on('end', () => {
+			if (!interaction.replied) return
+			interaction
+				.editReply({
 					components: [],
 				})
-			} catch (err) {
-				console.log('Error removing components:', err)
-			}
+				.catch(() => {})
 		})
 	} catch (error) {
 		console.error('Search error:', error)
-		await interaction.editReply(
-			'Виникла помилка при пошуку. Спробуйте пізніше.'
-		)
+		if (!interaction.replied) {
+			await interaction.editReply(
+				'Виникла помилка при пошуку. Спробуйте пізніше.'
+			)
+		}
 	}
+}
+
+async function handleHelp(interaction) {
+	const embed = new EmbedBuilder()
+		.setColor('#0099ff')
+		.setTitle('📋 Команди бота')
+		.setDescription(
+			'/search <запит> - Пошук товарів на OLX\n' +
+				'/help - Показати це повідомлення'
+		)
+
+	await interaction.reply({ embeds: [embed] })
 }
 
 module.exports = { handleSearch, handleHelp }
