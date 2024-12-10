@@ -7,6 +7,57 @@ const {
 const axios = require('axios')
 const cheerio = require('cheerio')
 
+function createSearchEmbed(query, results, page, imgUrl) {
+	const embed = new EmbedBuilder()
+		.setColor('#7289DA')
+		.setTitle(`🔍 Результати пошуку: ${query}`)
+		.setThumbnail(imgUrl || null)
+		.setDescription('```css\n[Знайдені оголошення]\n```')
+
+	results.forEach((item, i) => {
+		const formattedPrice = item.price.includes('грн')
+			? item.price
+			: `${item.price} грн.`
+
+		embed.addFields({
+			name: `${i + 1}.`,
+			value: `**${formattedPrice}**\n[🔗 Посилання](${item.link})`,
+			inline: false,
+		})
+	})
+
+	const currentTime = new Date()
+	const timeString = `${currentTime.getHours()}:${String(
+		currentTime.getMinutes()
+	).padStart(2, '0')}`
+
+	embed.setFooter({
+		text: `Сторінка ${page} • Оновлено о ${timeString}`,
+		iconURL: 'https://i.imgur.com/AfFp7pu.png',
+	})
+
+	return embed
+}
+
+function createButtons(query, page, hasResults) {
+	return new ActionRowBuilder().addComponents(
+		new ButtonBuilder()
+			.setCustomId(`prev_${query}_${page}`)
+			.setLabel('◀️ Назад')
+			.setStyle(ButtonStyle.Secondary)
+			.setDisabled(page <= 1),
+		new ButtonBuilder()
+			.setCustomId(`refresh_${query}_${page}`)
+			.setLabel('🔄')
+			.setStyle(ButtonStyle.Success),
+		new ButtonBuilder()
+			.setCustomId(`next_${query}_${page}`)
+			.setLabel('Вперед ▶️')
+			.setStyle(ButtonStyle.Secondary)
+			.setDisabled(!hasResults)
+	)
+}
+
 async function handleSearch(interaction, query, page = 1) {
 	try {
 		const isButton = interaction.isButton?.()
@@ -50,44 +101,8 @@ async function handleSearch(interaction, query, page = 1) {
 			return isButton ? interaction.update(reply) : interaction.editReply(reply)
 		}
 
-		const embed = new EmbedBuilder()
-			.setColor('#00ff00')
-			.setTitle(`🔍 Результати пошуку: ${query}`)
-
-		if (results[0]?.imgUrl) {
-			embed.setThumbnail(results[0].imgUrl)
-		}
-
-		results.forEach((item, i) => {
-			const formattedPrice = item.price.includes('грн')
-				? item.price
-				: `${item.price} грн.`
-			embed.addFields({
-				name: `${i + 1}.`,
-				value: `💰 ${formattedPrice}\n🔗 [Посилання](${item.link})`,
-			})
-		})
-
-		const currentTime = new Date()
-		const timeString = `${currentTime.getHours()}:${String(
-			currentTime.getMinutes()
-		).padStart(2, '0')}`
-
-		embed.setFooter({
-			text: `Сторінка ${page} • Оновлено о ${timeString}`,
-		})
-
-		const row = new ActionRowBuilder().addComponents(
-			new ButtonBuilder()
-				.setCustomId(`prev_${query}_${page}`)
-				.setLabel('◀️ Назад')
-				.setStyle(ButtonStyle.Primary)
-				.setDisabled(page <= 1),
-			new ButtonBuilder()
-				.setCustomId(`next_${query}_${page}`)
-				.setLabel('Вперед ▶️')
-				.setStyle(ButtonStyle.Primary)
-		)
+		const embed = createSearchEmbed(query, results, page, results[0]?.imgUrl)
+		const row = createButtons(query, page, results.length === 5)
 
 		const reply = {
 			embeds: [embed],
@@ -100,34 +115,44 @@ async function handleSearch(interaction, query, page = 1) {
 			await interaction.editReply(reply)
 		}
 
-		const filter = i => i.user.id === interaction.user.id
 		const collector = interaction.channel.createMessageComponentCollector({
-			filter,
-			time: 60000,
+			filter: i => i.user.id === interaction.user.id,
+			time: 300000,
 		})
 
 		collector.on('collect', async buttonInt => {
 			try {
 				const [action, q, p] = buttonInt.customId.split('_')
-				const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
-				await handleSearch(buttonInt, q, newPage)
+
+				if (action === 'refresh') {
+					await handleSearch(buttonInt, q, Number(p))
+				} else {
+					const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
+					await handleSearch(buttonInt, q, newPage)
+				}
+
+				collector.stop()
 			} catch (error) {
 				console.error('Button interaction error:', error)
+				await buttonInt.reply({
+					content: '❌ Виникла помилка. Спробуйте ще раз.',
+					ephemeral: true,
+				})
 			}
 		})
 
-		collector.on('end', async () => {
-			try {
-				const message = await interaction.fetchReply()
-				if (message) {
+		collector.on('end', async (collected, reason) => {
+			if (reason !== 'user' && interaction.message) {
+				try {
 					const disabledRow = new ActionRowBuilder().addComponents(
-						row.components[0].setDisabled(true),
-						row.components[1].setDisabled(true)
+						row.components.map(button =>
+							ButtonBuilder.from(button).setDisabled(true)
+						)
 					)
 					await interaction.editReply({ components: [disabledRow] })
+				} catch (error) {
+					console.error('Error disabling buttons:', error)
 				}
-			} catch (error) {
-				console.error('Error disabling buttons:', error)
 			}
 		})
 	} catch (error) {
