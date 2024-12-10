@@ -35,20 +35,63 @@ client.once('ready', async () => {
 	try {
 		const commands = [
 			{
-				name: 'search',
-				description: 'Пошук товарів на OLX',
+				name: 'add_schedule',
+				description: 'Додати нову подію до розкладу',
 				options: [
 					{
-						name: 'query',
-						description: 'Що шукаємо?',
+						name: 'date',
+						description: 'Дата події (DD.MM.YYYY)',
+						type: 3,
+						required: true,
+						autocomplete: true,
+					},
+					{
+						name: 'time',
+						description: 'Час події (HH:MM-HH:MM)',
+						type: 3,
+						required: true,
+					},
+					{
+						name: 'title',
+						description: 'Назва події',
 						type: 3,
 						required: true,
 					},
 				],
 			},
 			{
-				name: 'help',
-				description: 'Показати список команд',
+				name: 'show_schedule',
+				description: 'Показати список всіх запланованих подій',
+			},
+			{
+				name: 'delete_schedule',
+				description: 'Видалити подію за ID',
+				options: [
+					{
+						name: 'id',
+						description: 'ID події',
+						type: 4, // INTEGER
+						required: true,
+					},
+				],
+			},
+			{
+				name: 'send_schedule',
+				description: 'Надіслати подію користувачу',
+				options: [
+					{
+						name: 'user',
+						description: 'Користувач',
+						type: 6, // USER
+						required: true,
+					},
+					{
+						name: 'id',
+						description: 'ID події',
+						type: 4, // INTEGER
+						required: true,
+					},
+				],
 			},
 		]
 
@@ -65,14 +108,29 @@ client.on('interactionCreate', async interaction => {
 
 	try {
 		switch (interaction.commandName) {
-			case 'search':
-				await bot.handleSearch(
+			case 'add_schedule':
+				await bot.handleAddSchedule(
 					interaction,
-					interaction.options.getString('query')
+					interaction.options.getString('date'),
+					interaction.options.getString('time'),
+					interaction.options.getString('title')
 				)
 				break
-			case 'help':
-				await bot.handleHelp(interaction)
+			case 'show_schedule':
+				await bot.handleShowSchedule(interaction)
+				break
+			case 'delete_schedule':
+				await bot.handleDeleteSchedule(
+					interaction,
+					interaction.options.getInteger('id')
+				)
+				break
+			case 'send_schedule':
+				await bot.handleSendSchedule(
+					interaction,
+					interaction.options.getUser('user'),
+					interaction.options.getInteger('id')
+				)
 				break
 			default:
 				await interaction.reply({
@@ -95,6 +153,45 @@ client.on('interactionCreate', async interaction => {
 			}
 		} catch (e) {
 			console.error('Error sending error message:', e)
+		}
+	}
+})
+
+client.on('messageCreate', async message => {
+	if (message.content.startsWith('!add_schedule')) {
+		await message.reply({
+			content:
+				'❌ Цей бот використовує slash-команди!\n' +
+				'Використовуйте `/add_schedule` замість `!add_schedule`\n\n' +
+				'Приклад:\n' +
+				'`/add_schedule date:10.12.2024 time:20:30-21:00 title:Рейд на боса`',
+			ephemeral: true,
+		})
+	}
+})
+
+client.on('interactionCreate', async interaction => {
+	if (!interaction.isAutocomplete()) return
+
+	if (interaction.commandName === 'add_schedule') {
+		if (interaction.options.getFocused(true).name === 'date') {
+			const dates = []
+			for (let i = 0; i < 7; i++) {
+				const date = new Date()
+				date.setDate(date.getDate() + i)
+				const formattedDate = date
+					.toLocaleDateString('uk-UA', {
+						day: '2-digit',
+						month: '2-digit',
+						year: 'numeric',
+					})
+					.replace(/\./g, '.')
+				dates.push({
+					name: formattedDate,
+					value: formattedDate,
+				})
+			}
+			await interaction.respond(dates)
 		}
 	}
 })
