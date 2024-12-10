@@ -9,7 +9,9 @@ const cheerio = require('cheerio')
 
 async function handleSearch(interaction, query, page = 1) {
 	try {
-		if (!interaction.deferred) {
+		const isButton = interaction.isButton?.()
+
+		if (!isButton && !interaction.deferred) {
 			await interaction.deferReply()
 		}
 
@@ -44,28 +46,36 @@ async function handleSearch(interaction, query, page = 1) {
 		})
 
 		if (!hasResults) {
-			return await interaction.editReply('За вашим запитом нічого не знайдено.')
+			const reply = { content: '❌ За вашим запитом нічого не знайдено.' }
+			return isButton ? interaction.update(reply) : interaction.editReply(reply)
 		}
 
 		const embed = new EmbedBuilder()
 			.setColor('#00ff00')
 			.setTitle(`🔍 Результати пошуку: ${query}`)
+			.setDescription('Знайдено наступні оголошення:')
 
 		if (results[0]?.imgUrl) {
 			embed.setThumbnail(results[0].imgUrl)
 		}
 
 		results.forEach((item, i) => {
+			const formattedPrice = item.price.includes('грн')
+				? item.price
+				: `${item.price} грн.`
 			embed.addFields({
-				name: `${i + 1}.`,
-				value: `💰 ${item.price}\n🔗 [Посилання](${item.link})`,
+				name: `${i + 1}. ${item.title}`,
+				value: `💰 **${formattedPrice}**\n🔗 [Перейти до оголошення](${item.link})`,
 			})
 		})
 
+		const currentTime = new Date()
+		const timeString = `${currentTime.getHours()}:${String(
+			currentTime.getMinutes()
+		).padStart(2, '0')}`
+
 		embed.setFooter({
-			text: `Сторінка ${page} • Сьогодні о ${new Date().getHours()}:${String(
-				new Date().getMinutes()
-			).padStart(2, '0')}`,
+			text: `Сторінка ${page} • Оновлено о ${timeString}`,
 		})
 
 		const row = new ActionRowBuilder().addComponents(
@@ -80,37 +90,46 @@ async function handleSearch(interaction, query, page = 1) {
 				.setStyle(ButtonStyle.Primary)
 		)
 
-		await interaction.editReply({
+		const reply = {
 			embeds: [embed],
 			components: [row],
-		})
+		}
 
+		if (isButton) {
+			await interaction.update(reply)
+		} else {
+			await interaction.editReply(reply)
+		}
+
+		const filter = i => i.user.id === interaction.user.id
 		const collector = interaction.channel.createMessageComponentCollector({
-			filter: i => i.user.id === interaction.user.id,
+			filter,
 			time: 60000,
 		})
 
 		collector.on('collect', async buttonInt => {
 			const [action, q, p] = buttonInt.customId.split('_')
 			const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
-
-			await buttonInt.deferUpdate()
-			await handleSearch(interaction, q, newPage)
+			await handleSearch(buttonInt, q, newPage)
 		})
 
 		collector.on('end', async () => {
 			try {
 				const message = await interaction.fetchReply()
 				if (message) {
-					await interaction.editReply({ components: [] })
+					const disabledRow = new ActionRowBuilder().addComponents(
+						row.components[0].setDisabled(true),
+						row.components[1].setDisabled(true)
+					)
+					await interaction.editReply({ components: [disabledRow] })
 				}
 			} catch (error) {
-				console.error('Error removing buttons:', error)
+				console.error('Error disabling buttons:', error)
 			}
 		})
 	} catch (error) {
 		console.error('Search error:', error)
-		const errorMessage = 'Виникла помилка при пошуку. Спробуйте пізніше.'
+		const errorMessage = '❌ Виникла помилка при пошуку. Спробуйте пізніше.'
 
 		if (interaction.deferred) {
 			await interaction.editReply({ content: errorMessage })
@@ -125,8 +144,8 @@ async function handleHelp(interaction) {
 		.setColor('#0099ff')
 		.setTitle('📋 Команди бота')
 		.setDescription(
-			'/search <запит> - Пошук товарів на OLX\n' +
-				'/help - Показати це повідомлення'
+			'🔍 **/search** `<запит>` - Пошук товарів на OLX\n' +
+				'❓ **/help** - Показати це повідомлення'
 		)
 
 	await interaction.reply({ embeds: [embed] })
