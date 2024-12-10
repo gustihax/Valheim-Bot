@@ -53,7 +53,6 @@ async function handleSearch(interaction, query, page = 1) {
 		const embed = new EmbedBuilder()
 			.setColor('#00ff00')
 			.setTitle(`🔍 Результати пошуку: ${query}`)
-			.setDescription('')
 
 		if (results[0]?.imgUrl) {
 			embed.setThumbnail(results[0].imgUrl)
