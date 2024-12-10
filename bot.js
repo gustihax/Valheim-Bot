@@ -7,62 +7,38 @@ const {
 const axios = require('axios')
 const cheerio = require('cheerio')
 
-function createSearchEmbed(query, results, page, imgUrl) {
+function createSearchEmbed(query, results, page) {
 	const embed = new EmbedBuilder()
-		.setColor('#7289DA')
+		.setColor('#2b2d31')
 		.setTitle(`🔍 Результати пошуку: ${query}`)
-		.setThumbnail(imgUrl || null)
-		.setDescription('```css\n[Знайдені оголошення]\n```')
 
-	results.forEach((item, i) => {
-		const formattedPrice = item.price.includes('грн')
-			? item.price
-			: `${item.price} грн.`
-
-		embed.addFields({
-			name: `${i + 1}.`,
-			value: `**${formattedPrice}**\n[🔗 Посилання](${item.link})`,
-			inline: false,
+	const description = results
+		.map((item, i) => {
+			const price = item.price.includes('грн')
+				? item.price
+				: `${item.price} грн.`
+			return `${i + 1}.\n💰 ${price}\n🔗 [Посилання](${item.link})`
 		})
-	})
+		.join('\n\n')
 
-	const currentTime = new Date()
-	const timeString = `${currentTime.getHours()}:${String(
-		currentTime.getMinutes()
-	).padStart(2, '0')}`
-
-	embed.setFooter({
-		text: `Сторінка ${page} • Оновлено о ${timeString}`,
-		iconURL: 'https://i.imgur.com/AfFp7pu.png',
-	})
+	embed
+		.setDescription(description)
+		.setThumbnail(results[0]?.imgUrl || null)
+		.setFooter({
+			text: `Сторінка ${page} • ${new Date().toLocaleTimeString('uk-UA', {
+				hour: '2-digit',
+				minute: '2-digit',
+			})}`,
+		})
 
 	return embed
 }
 
-function createButtons(query, page, hasResults) {
-	return new ActionRowBuilder().addComponents(
-		new ButtonBuilder()
-			.setCustomId(`prev_${query}_${page}`)
-			.setLabel('◀️ Назад')
-			.setStyle(ButtonStyle.Secondary)
-			.setDisabled(page <= 1),
-		new ButtonBuilder()
-			.setCustomId(`refresh_${query}_${page}`)
-			.setLabel('🔄')
-			.setStyle(ButtonStyle.Success),
-		new ButtonBuilder()
-			.setCustomId(`next_${query}_${page}`)
-			.setLabel('Вперед ▶️')
-			.setStyle(ButtonStyle.Secondary)
-			.setDisabled(!hasResults)
-	)
-}
-
 async function handleSearch(interaction, query, page = 1) {
 	try {
-		const isButton = interaction.isButton?.()
+		const isButton = interaction.isButton()
 
-		if (!isButton && !interaction.deferred) {
+		if (!isButton) {
 			await interaction.deferReply()
 		}
 
@@ -73,8 +49,6 @@ async function handleSearch(interaction, query, page = 1) {
 		const $ = cheerio.load(response.data)
 
 		const results = []
-		let hasResults = false
-
 		$('div[data-cy="l-card"]').each((i, el) => {
 			if (i >= 5) return false
 
@@ -86,83 +60,79 @@ async function handleSearch(interaction, query, page = 1) {
 				: `https://www.olx.ua${link}`
 			const imgUrl = $(el).find('img').attr('src')
 
-			results.push({
-				title: title || 'Без назви',
-				price: price || 'Ціна не вказана',
-				link: fullLink,
-				imgUrl,
-			})
-
-			hasResults = true
+			results.push({ title, price, link: fullLink, imgUrl })
 		})
 
-		if (!hasResults) {
-			const reply = { content: '❌ За вашим запитом нічого не знайдено.' }
-			return isButton ? interaction.update(reply) : interaction.editReply(reply)
+		if (results.length === 0) {
+			const noResultsMessage = {
+				content: '❌ За вашим запитом нічого не знайдено.',
+			}
+			return isButton
+				? await interaction.update(noResultsMessage)
+				: await interaction.editReply(noResultsMessage)
 		}
 
-		const embed = createSearchEmbed(query, results, page, results[0]?.imgUrl)
-		const row = createButtons(query, page, results.length === 5)
+		const embed = createSearchEmbed(query, results, page)
 
-		const reply = {
-			embeds: [embed],
-			components: [row],
-		}
+		const row = new ActionRowBuilder().addComponents(
+			new ButtonBuilder()
+				.setCustomId(`prev:${query}:${page}`)
+				.setEmoji('⬅️')
+				.setStyle(ButtonStyle.Secondary)
+				.setDisabled(page <= 1),
+			new ButtonBuilder()
+				.setCustomId(`next:${query}:${page}`)
+				.setEmoji('➡️')
+				.setStyle(ButtonStyle.Secondary)
+				.setDisabled(results.length < 5)
+		)
 
+		const messagePayload = { embeds: [embed], components: [row] }
+
+		let reply
 		if (isButton) {
-			await interaction.update(reply)
+			reply = await interaction.update(messagePayload)
 		} else {
-			await interaction.editReply(reply)
+			reply = await interaction.editReply(messagePayload)
 		}
 
-		const collector = interaction.channel.createMessageComponentCollector({
-			filter: i => i.user.id === interaction.user.id,
+		const filter = i => i.user.id === interaction.user.id
+		const collector = reply.createMessageComponentCollector({
+			filter,
 			time: 300000,
 		})
 
 		collector.on('collect', async buttonInt => {
-			try {
-				const [action, q, p] = buttonInt.customId.split('_')
-
-				if (action === 'refresh') {
-					await handleSearch(buttonInt, q, Number(p))
-				} else {
-					const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
-					await handleSearch(buttonInt, q, newPage)
-				}
-
-				collector.stop()
-			} catch (error) {
-				console.error('Button interaction error:', error)
+			if (buttonInt.message.interaction?.id !== interaction.id) {
 				await buttonInt.reply({
-					content: '❌ Виникла помилка. Спробуйте ще раз.',
+					content:
+						'Ця сесія пошуку застаріла. Будь ласка, створіть новий пошук.',
+					ephemeral: true,
+				})
+				return
+			}
+
+			const [action, q, p] = buttonInt.customId.split(':')
+			const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
+
+			try {
+				await handleSearch(buttonInt, q, newPage)
+			} catch (error) {
+				await buttonInt.reply({
+					content:
+						'❌ Помилка при оновленні результатів. Спробуйте новий пошук.',
 					ephemeral: true,
 				})
 			}
 		})
-
-		collector.on('end', async (collected, reason) => {
-			if (reason !== 'user' && interaction.message) {
-				try {
-					const disabledRow = new ActionRowBuilder().addComponents(
-						row.components.map(button =>
-							ButtonBuilder.from(button).setDisabled(true)
-						)
-					)
-					await interaction.editReply({ components: [disabledRow] })
-				} catch (error) {
-					console.error('Error disabling buttons:', error)
-				}
-			}
-		})
 	} catch (error) {
 		console.error('Search error:', error)
-		const errorMessage = '❌ Виникла помилка при пошуку. Спробуйте пізніше.'
+		const errorMessage = '❌ Помилка при пошуку. Спробуйте пізніше.'
 
-		if (interaction.deferred) {
-			await interaction.editReply({ content: errorMessage })
-		} else {
+		if (!interaction.deferred && !interaction.replied) {
 			await interaction.reply({ content: errorMessage, ephemeral: true })
+		} else {
+			await interaction.editReply({ content: errorMessage })
 		}
 	}
 }
