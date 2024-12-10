@@ -47,7 +47,7 @@ client.once('ready', async () => {
 					},
 					{
 						name: 'time',
-						description: 'Час події (HH:MM-HH:MM)',
+						description: 'Час події (HH:MM або HH:MM-HH:MM)',
 						type: 3,
 						required: true,
 					},
