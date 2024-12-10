@@ -53,7 +53,7 @@ async function handleSearch(interaction, query, page = 1) {
 		const embed = new EmbedBuilder()
 			.setColor('#00ff00')
 			.setTitle(`🔍 Результати пошуку: ${query}`)
-			.setDescription('Знайдено наступні оголошення:')
+			.setDescription('')
 
 		if (results[0]?.imgUrl) {
 			embed.setThumbnail(results[0].imgUrl)
@@ -64,8 +64,8 @@ async function handleSearch(interaction, query, page = 1) {
 				? item.price
 				: `${item.price} грн.`
 			embed.addFields({
-				name: `${i + 1}. ${item.title}`,
-				value: `💰 **${formattedPrice}**\n🔗 [Перейти до оголошення](${item.link})`,
+				name: `${i + 1}.`,
+				value: `💰 ${formattedPrice}\n🔗 [Посилання](${item.link})`,
 			})
 		})
 
@@ -108,9 +108,13 @@ async function handleSearch(interaction, query, page = 1) {
 		})
 
 		collector.on('collect', async buttonInt => {
-			const [action, q, p] = buttonInt.customId.split('_')
-			const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
-			await handleSearch(buttonInt, q, newPage)
+			try {
+				const [action, q, p] = buttonInt.customId.split('_')
+				const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
+				await handleSearch(buttonInt, q, newPage)
+			} catch (error) {
+				console.error('Button interaction error:', error)
+			}
 		})
 
 		collector.on('end', async () => {
