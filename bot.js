@@ -25,12 +25,46 @@ async function saveSchedule(schedule) {
 }
 
 function isValidDate(dateStr) {
-	const [day, month, year] = dateStr.split('.')
-	const date = new Date(year, month - 1, day)
-	const today = new Date()
-	today.setHours(0, 0, 0, 0)
+	try {
+		// Розбиваємо дату на компоненти
+		const [day, month, year] = dateStr.split('.').map(Number)
 
-	return date instanceof Date && !isNaN(date) && date >= today
+		// Створюємо об'єкт дати
+		const date = new Date(year, month - 1, day)
+		const today = new Date()
+		today.setHours(0, 0, 0, 0)
+
+		// Перевіряємо, чи дата валідна і не в минулому
+		const isValid =
+			date instanceof Date &&
+			!isNaN(date) &&
+			date.getDate() === day &&
+			date.getMonth() === month - 1 &&
+			date.getFullYear() === year &&
+			date >= today
+
+		if (!isValid) {
+			console.log('Invalid date:', {
+				dateStr,
+				parsed: { day, month, year },
+				date,
+				today,
+				checks: {
+					isDate: date instanceof Date,
+					isNotNaN: !isNaN(date),
+					dayMatch: date.getDate() === day,
+					monthMatch: date.getMonth() === month - 1,
+					yearMatch: date.getFullYear() === year,
+					notInPast: date >= today,
+				},
+			})
+		}
+
+		return isValid
+	} catch (error) {
+		console.error('Date validation error:', error)
+		return false
+	}
 }
 
 function isValidTime(timeStr) {
@@ -445,6 +479,135 @@ async function handleHelp(interaction) {
 	await interaction.reply({ embeds: [embed] })
 }
 
+async function handleMultipleSchedules(interaction, eventsInput) {
+	await interaction.deferReply()
+	const schedule = await loadSchedule()
+	const results = []
+	const errors = []
+
+	const eventsList = eventsInput
+		.split(';')
+		.map(e => e.trim())
+		.filter(e => e.length > 0)
+
+	for (const eventStr of eventsList) {
+		try {
+			const [date, time, ...titleParts] = eventStr.split(' ').filter(Boolean)
+			const title = titleParts.join(' ')
+
+			if (!date || !time || !title) {
+				errors.push(
+					`Неправильний формат події. Використовуйте: ДД.ММ.РРРР ГГ:ХХ[-ГГ:ХХ] Назва\nОтримано: ${eventStr}`
+				)
+				continue
+			}
+
+			if (!date.match(/^\d{2}\.\d{2}\.\d{4}$/) || !isValidDate(date)) {
+				errors.push(`Недійсна дата: ${date}`)
+				continue
+			}
+
+			if (!time.match(/^\d{2}:\d{2}(-\d{2}:\d{2})?$/) || !isValidTime(time)) {
+				errors.push(`Недійсний формат часу: ${time}`)
+				continue
+			}
+
+			const isDuplicate = schedule.some(
+				event =>
+					event.date === date &&
+					event.time === time &&
+					event.title.toLowerCase() === title.toLowerCase()
+			)
+
+			if (isDuplicate) {
+				errors.push(`Подія вже існує: ${title} (${date} ${time})`)
+				continue
+			}
+
+			const newEvent = {
+				id: schedule.length + 1,
+				date,
+				time,
+				title,
+				createdBy: interaction.user.id,
+				createdAt: new Date().toISOString(),
+			}
+
+			schedule.push(newEvent)
+			results.push(newEvent)
+		} catch (error) {
+			console.error('Event processing error:', error)
+			errors.push(`Помилка при обробці події: ${eventStr}`)
+		}
+	}
+
+	if (results.length > 0) {
+		await saveSchedule(schedule)
+	}
+
+	const [day, month, year] = results[0]?.date.split('.') || []
+	const months = {
+		'01': 'Січня',
+		'02': 'Лютого',
+		'03': 'Березня',
+		'04': 'Квітня',
+		'05': 'Травня',
+		'06': 'Червня',
+		'07': 'Липня',
+		'08': 'Серпня',
+		'09': 'Вересня',
+		10: 'Жовтня',
+		11: 'Листопада',
+		12: 'Грудня',
+	}
+
+	const embed = new EmbedBuilder()
+		.setColor(results.length > 0 ? '#5865F2' : '#ED4245')
+		.setAuthor({
+			name: 'Додавання подій до розкладу',
+			iconURL:
+				'https://ih1.redbubble.net/image.3117871954.9351/st,small,507x507-pad,600x600,f8f8f8.jpg',
+		})
+
+	if (results.length > 0) {
+		let description = '✅ **Успішно додані події:**\n\n'
+
+		for (const event of results) {
+			const [eventDay, eventMonth, eventYear] = event.date.split('.')
+			const timeDisplay = formatTimeDisplay(event.time)
+
+			description +=
+				`### 📝 Опис події: ${event.title}\n` +
+				`📅 ${eventDay} ${months[eventMonth]} ${eventYear}\n` +
+				`⏰ ${timeDisplay}\n` +
+				`👤 Організатор: <@${event.createdBy}>\n` +
+				`🔍 ID: #${event.id}\n\n` +
+				`━━━━━━━━━━━━━━━━━━━━━\n\n`
+		}
+
+		embed.setDescription(description)
+	} else {
+		embed.setDescription(`# ❌ Помилки:\n\n${errors.join('\n')}`)
+	}
+
+	embed.setFooter({
+		text: `Valheim Project • Система планування • ${new Date().toLocaleString(
+			'uk-UA',
+			{
+				day: '2-digit',
+				month: '2-digit',
+				year: 'numeric',
+				hour: '2-digit',
+				minute: '2-digit',
+			}
+		)}`,
+		iconURL:
+			'https://gcdn.thunderstore.io/live/repository/icons/Harleyy-HarleysModpackEnhanced-1.0.7.png.256x256_q95.png',
+	})
+
+	await interaction.editReply({ embeds: [embed] })
+}
+
 module.exports = {
 	handleSearch,
 	handleHelp,
@@ -452,4 +615,5 @@ module.exports = {
 	handleShowSchedule,
 	handleDeleteSchedule,
 	handleSendSchedule,
+	handleMultipleSchedules,
 }

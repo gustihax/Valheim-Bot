@@ -36,25 +36,13 @@ client.once('ready', async () => {
 		const commands = [
 			{
 				name: 'add_schedule',
-				description: 'Додати нову подію до розкладу',
+				description: 'Додати нові події до розкладу',
 				options: [
 					{
-						name: 'date',
-						description: 'Дата події (DD.MM.YYYY)',
-						type: 3,
-						required: true,
-						autocomplete: true,
-					},
-					{
-						name: 'time',
-						description: 'Час події (HH:MM або HH:MM-HH:MM)',
-						type: 3,
-						required: true,
-					},
-					{
-						name: 'title',
-						description: 'Назва події',
-						type: 3,
+						name: 'events',
+						description:
+							'Події у форматі: DD.MM.YYYY HH:MM[-HH:MM] Н��зва; [наступна подія]',
+						type: 3, // STRING
 						required: true,
 					},
 				],
@@ -109,12 +97,8 @@ client.on('interactionCreate', async interaction => {
 	try {
 		switch (interaction.commandName) {
 			case 'add_schedule':
-				await bot.handleAddSchedule(
-					interaction,
-					interaction.options.getString('date'),
-					interaction.options.getString('time'),
-					interaction.options.getString('title')
-				)
+				const eventsInput = interaction.options.getString('events')
+				await bot.handleMultipleSchedules(interaction, eventsInput)
 				break
 			case 'show_schedule':
 				await bot.handleShowSchedule(interaction)
@@ -175,23 +159,37 @@ client.on('interactionCreate', async interaction => {
 
 	if (interaction.commandName === 'add_schedule') {
 		if (interaction.options.getFocused(true).name === 'date') {
-			const dates = []
-			for (let i = 0; i < 7; i++) {
-				const date = new Date()
-				date.setDate(date.getDate() + i)
-				const formattedDate = date
-					.toLocaleDateString('uk-UA', {
-						day: '2-digit',
-						month: '2-digit',
-						year: 'numeric',
+			try {
+				const dates = []
+				const today = new Date()
+
+				for (let i = 0; i < 30; i++) {
+					const date = new Date()
+					date.setDate(today.getDate() + i)
+
+					const day = String(date.getDate()).padStart(2, '0')
+					const month = String(date.getMonth() + 1).padStart(2, '0')
+					const year = date.getFullYear()
+
+					const formattedDate = `${day}.${month}.${year}`
+
+					dates.push({
+						name: formattedDate,
+						value: formattedDate,
 					})
-					.replace(/\./g, '.')
-				dates.push({
-					name: formattedDate,
-					value: formattedDate,
-				})
+				}
+
+				const focusedValue = interaction.options.getFocused()
+				const filtered = dates.filter(date =>
+					date.name.startsWith(focusedValue)
+				)
+
+				if (!interaction.responded) {
+					await interaction.respond(filtered.slice(0, 25))
+				}
+			} catch (error) {
+				console.error('Autocomplete error:', error)
 			}
-			await interaction.respond(dates)
 		}
 	}
 })
