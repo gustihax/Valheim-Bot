@@ -7,23 +7,12 @@ const {
 const axios = require('axios')
 const cheerio = require('cheerio')
 
-async function handleSearch(interaction, query) {
+async function handleSearch(interaction, query, page = 1) {
 	try {
-		await interaction.deferReply()
-		await searchOlx(interaction, query, 1)
-	} catch (error) {
-		console.error('Search error:', error)
-		if (!interaction.replied && !interaction.deferred) {
-			await interaction.reply({
-				content: 'Виникла помилка при пошуку. Спробуйте пізніше.',
-				ephemeral: true,
-			})
+		if (!interaction.deferred) {
+			await interaction.deferReply()
 		}
-	}
-}
 
-async function searchOlx(interaction, query, page = 1) {
-	try {
 		const searchUrl = `https://www.olx.ua/d/uk/list/q-${encodeURIComponent(
 			query
 		)}/?page=${page}`
@@ -35,7 +24,6 @@ async function searchOlx(interaction, query, page = 1) {
 
 		$('div[data-cy="l-card"]').each((i, el) => {
 			if (i >= 5) return false
-			hasResults = true
 
 			const title = $(el).find('[data-testid="ad-title"]').text().trim()
 			const price = $(el).find('[data-testid="ad-price"]').text().trim()
@@ -45,7 +33,14 @@ async function searchOlx(interaction, query, page = 1) {
 				: `https://www.olx.ua${link}`
 			const imgUrl = $(el).find('img').attr('src')
 
-			results.push({ title, price, link: fullLink, imgUrl })
+			results.push({
+				title: title || 'Без назви',
+				price: price || 'Ціна не вказана',
+				link: fullLink,
+				imgUrl,
+			})
+
+			hasResults = true
 		})
 
 		if (!hasResults) {
@@ -55,16 +50,22 @@ async function searchOlx(interaction, query, page = 1) {
 		const embed = new EmbedBuilder()
 			.setColor('#00ff00')
 			.setTitle(`🔍 Результати пошуку: ${query}`)
-			.setFooter({ text: `Сторінка ${page}` })
+
+		if (results[0]?.imgUrl) {
+			embed.setThumbnail(results[0].imgUrl)
+		}
 
 		results.forEach((item, i) => {
 			embed.addFields({
-				name: `${i + 1}. ${item.price}`,
-				value: `[${item.title}](${item.link})`,
+				name: `${i + 1}.`,
+				value: `💰 ${item.price}\n🔗 [Посилання](${item.link})`,
 			})
-			if (i === 0 && item.imgUrl) {
-				embed.setThumbnail(item.imgUrl)
-			}
+		})
+
+		embed.setFooter({
+			text: `Сторінка ${page} • Сьогодні о ${new Date().getHours()}:${String(
+				new Date().getMinutes()
+			).padStart(2, '0')}`,
 		})
 
 		const row = new ActionRowBuilder().addComponents(
@@ -79,44 +80,42 @@ async function searchOlx(interaction, query, page = 1) {
 				.setStyle(ButtonStyle.Primary)
 		)
 
-		const message = await interaction.editReply({
+		await interaction.editReply({
 			embeds: [embed],
 			components: [row],
 		})
 
-		const collector = message.createMessageComponentCollector({
+		const collector = interaction.channel.createMessageComponentCollector({
+			filter: i => i.user.id === interaction.user.id,
 			time: 60000,
 		})
 
-		collector.on('collect', async buttonInteraction => {
-			if (buttonInteraction.user.id !== interaction.user.id) {
-				return buttonInteraction.reply({
-					content: 'Ви не можете використовувати ці кнопки.',
-					ephemeral: true,
-				})
-			}
+		collector.on('collect', async buttonInt => {
+			const [action, q, p] = buttonInt.customId.split('_')
+			const newPage = action === 'next' ? Number(p) + 1 : Number(p) - 1
 
-			const [action, q, p] = buttonInteraction.customId.split('_')
-			const newPage = action === 'next' ? parseInt(p) + 1 : parseInt(p) - 1
-
-			await buttonInteraction.deferUpdate()
-			await searchOlx(interaction, q, newPage)
+			await buttonInt.deferUpdate()
+			await handleSearch(interaction, q, newPage)
 		})
 
-		collector.on('end', () => {
-			if (!interaction.replied) return
-			interaction
-				.editReply({
-					components: [],
-				})
-				.catch(() => {})
+		collector.on('end', async () => {
+			try {
+				const message = await interaction.fetchReply()
+				if (message) {
+					await interaction.editReply({ components: [] })
+				}
+			} catch (error) {
+				console.error('Error removing buttons:', error)
+			}
 		})
 	} catch (error) {
 		console.error('Search error:', error)
-		if (!interaction.replied) {
-			await interaction.editReply(
-				'Виникла помилка при пошуку. Спробуйте пізніше.'
-			)
+		const errorMessage = 'Виникла помилка при пошуку. Спробуйте пізніше.'
+
+		if (interaction.deferred) {
+			await interaction.editReply({ content: errorMessage })
+		} else {
+			await interaction.reply({ content: errorMessage, ephemeral: true })
 		}
 	}
 }
